@@ -1,0 +1,6 @@
+//GPAZ08XX JOB 'KARINA',MSGCLASS=X,CLASS=C,NOTIFY=GPAZ08,TIME=(0,20)
+//**********************************************************************
+//*                      COMPILA PROGRAMA CICS
+//**********************************************************************
+// JCLLIB ORDER=GP.LB.PROCLIB
+//CICSPGM  EXEC DFHCICS1,NAME=AZ08PGMD,INSTR='GPAZ08'
