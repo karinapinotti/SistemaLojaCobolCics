@@ -1,0 +1,18 @@
+      *----------------------------------------------------------------*
+      *          BOOK DE ARQUIVO     - CADASTRO DE PRODUTOS            *
+      *          NOME DO BOOK        - CADPRD                          *
+      *          NOME DO PDS         - GP.GPAZ08.BOOKLIB               *
+      *          NOME  DO ARQUIVO    - CADPRD                          *
+      *          TAMANHO DO REGISTRO - 69 BYTES                        *
+      *----------------------------------------------------------------*
+       01  :XX-:REG-VCADPRD.
+           05 :XX-:CODPROD                 PIC X(04).
+           05 :XX-:DESCPROD                PIC X(20).
+           05 :XX-:UNIDPROD                PIC X(05).
+           05 :XX-:LOCALPROD               PIC X(05).
+           05 :XX-:QTDEST                  PIC 9(05).
+           05 :XX-:QTDMAX                  PIC 9(05).
+           05 :XX-:QTDMIN                  PIC 9(05).
+           05 :XX-:PRECOCOMPRA             PIC 9(06)V99.
+           05 :XX-:PRECOVENDA              PIC 9(06)V99.
+           05 :XX-:PERCOMIS                PIC 9(02)V99.

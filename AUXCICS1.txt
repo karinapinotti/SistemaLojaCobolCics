@@ -1,0 +1,52 @@
+      *----------------------------------------------------------------*
+       IDENTIFICATION                      DIVISION.
+      *----------------------------------------------------------------*
+       PROGRAM-ID.                         AUXCICS1.
+      *----------------------------------------------------------------*
+       ENVIRONMENT                         DIVISION.
+      *----------------------------------------------------------------*
+       CONFIGURATION                       SECTION.
+       SPECIAL-NAMES.
+            DECIMAL-POINT IS COMMA.
+       INPUT-OUTPUT                        SECTION.
+
+      *----------------------------------------------------------------*
+       DATA                                DIVISION.
+      *----------------------------------------------------------------*
+      *----------------------------------------------------------------*
+       WORKING-STORAGE                     SECTION.
+      *----------------------------------------------------------------*
+       77  WS-ABSTIME                      PIC S9(15) COMP-3.
+
+       01  WS-DFHCOMMAREA.
+           05 WS-DATA                      PIC X(10).
+           05 WS-HORARIO                   PIC X(08).
+
+      *----------------------------------------------------------------*
+       LINKAGE                             SECTION.
+      *----------------------------------------------------------------*
+       01  DFHCOMMAREA.
+           05 OCCURS 0 TO 32768 TIMES DEPENDING ON EIBCALEN
+                                           PIC X(01).
+
+      *----------------------------------------------------------------*
+       PROCEDURE                           DIVISION.
+      *----------------------------------------------------------------*
+           MOVE DFHCOMMAREA                TO WS-DFHCOMMAREA.
+
+           EXEC CICS ASKTIME
+                ABSTIME(WS-ABSTIME)
+           END-EXEC
+
+           EXEC CICS FORMATTIME
+                ABSTIME(WS-ABSTIME)
+                DDMMYYYY(WS-DATA)
+                TIME(WS-HORARIO)
+                DATESEP('/')
+                TIMESEP(':')
+           END-EXEC
+
+           MOVE WS-DFHCOMMAREA             TO DFHCOMMAREA
+           EXEC CICS RETURN
+           END-EXEC
+           .

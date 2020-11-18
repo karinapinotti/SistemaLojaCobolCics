@@ -1,0 +1,446 @@
+      *----------------------------------------------------------------*
+       IDENTIFICATION                      DIVISION.
+      *----------------------------------------------------------------*
+       PROGRAM-ID.                         AZ08PGMC.
+
+      *----------------------------------------------------------------*
+       ENVIRONMENT                         DIVISION.
+      *----------------------------------------------------------------*
+       CONFIGURATION                       SECTION.
+       SPECIAL-NAMES.
+           DECIMAL-POINT IS COMMA.
+      *----------------------------------------------------------------*
+       DATA                                DIVISION.
+      *----------------------------------------------------------------*
+       WORKING-STORAGE                     SECTION.
+      *----------------------------------------------------------------*
+
+      *
+      * COPY DA AREA DFHBMSCA - MNEMONICO DOS ATRIBUTOS
+      *
+           COPY DFHBMSCA.
+
+      *
+      * COPY DA AREA DFHAID   - MNEMONICO DAS TECLAS PRESSIONADAS
+      *
+           COPY DFHAID.
+
+      *
+      * COPY DO MAPA SIMBOLICO (MAPLIB) - AZ08CAD
+      *
+           COPY AZ08CAD.
+
+      *
+      * COPY BOOK VCADPRD
+      *
+           COPY VCADPRD REPLACING ==:XX-:== BY ==WS-==.
+
+       77  WS-MSG-ERRO                     PIC X(80).
+       77  WS-LENGTH                       PIC S9(04) COMP.
+
+       01  WS-DFHCOMMAREA.
+           05 WS-FASE                      PIC X(01).
+
+       01  WS-VAR-TEMPO.
+           05 WS-DATA                      PIC X(10).
+           05 WS-HORARIO                   PIC X(08).
+
+
+      *----------------------------------------------------------------*
+       LINKAGE                             SECTION.
+      *----------------------------------------------------------------*
+       01  DFHCOMMAREA.
+           05 OCCURS 0 TO 24576 TIMES DEPENDING ON EIBCALEN
+                                           PIC X(01).
+
+      *----------------------------------------------------------------*
+       PROCEDURE                           DIVISION.
+      *----------------------------------------------------------------*
+           EXEC CICS HANDLE CONDITION
+               MAPFAIL(999-MAPFAIL)
+               NOTFND(250-NOTFND)
+               ERROR(999-ERROR)
+           END-EXEC
+
+      ******************************************************************
+      *
+      * SELETOR DE FASE - A EXCLUSAO POSSUI TRES FASES
+      *
+      *         FASE 1  - ENVIA O MAPA PARA O TERMINAL
+      *         FASE 2  - TRATA O CAMPO T2COD
+      *         FASE 3  - TRATA O CAMPO T2CONF "CONFIRMA EXCLUSAO"
+      *         FASE 4  - TRATA O CAMPO T2CONF "EXCLUIR OUTRO"
+      *
+      ******************************************************************
+           MOVE DFHCOMMAREA                TO WS-DFHCOMMAREA
+
+           IF EIBCALEN = 0
+              MOVE 'ACESSO INVALIDO - USE A OPCAO C DO TRANSACAO Z08M'
+                                           TO WS-MSG-ERRO
+              PERFORM 999-ENCERRA-TRANSACAO
+           END-IF
+
+           EVALUATE WS-FASE
+              WHEN '1'   PERFORM 100-FASE1
+              WHEN '2'   PERFORM 200-FASE2
+              WHEN '3'   PERFORM 300-FASE3
+              WHEN '4'   PERFORM 400-FASE4
+              WHEN OTHER
+                   MOVE 'ERRO NO NUMERO DA FASE - CONSULTA-VSAM'
+                                           TO WS-MSG-ERRO
+                   PERFORM 999-ENCERRA-TRANSACAO
+           END-EVALUATE
+           .
+
+       100-FASE1.
+      * 1 - LIMPAR AS VARIAVEIS DO MAPA
+           MOVE LOW-VALUES                 TO MAPACADO
+
+      * 2 - POSICIONAR O CURSOR NO CAMPO T2COD
+           MOVE -1                         TO T2CODL
+
+      * 3 - MOVER UMA MENSAGEM PARA O USUARIO T2MSG
+           MOVE 'ENTRE O CODIGO DO PRODUTO PARA EXCLUIR'
+                                           TO T2MSGO
+
+      * 4 - DESPROTEGER O CAMPO T2COD E PROTEGER OS DEMAIS
+           PERFORM 999-PROTECAO-FASE2
+
+      * 5 - CARREGAR AS DEMAIS VARIAVEIS DO MAPA E ENVIA-LA AO TERMINAL
+           PERFORM 999-MANDA-TELA
+
+      * 6 - ENCERRAR A TRANSACAO E CHAMAR A FASE 2
+           PERFORM 999-CHAMA-FASE2
+           .
+
+       200-FASE2.
+           EXEC CICS HANDLE AID
+              ENTER (210-ENTER)
+              PF3   (220-PF3)
+              PF5   (230-PF5)
+              CLEAR (230-PF5)
+              ANYKEY(240-ANYKEY)
+           END-EXEC
+
+           EXEC CICS RECEIVE
+              MAP('MAPACAD')
+              MAPSET('AZ08CAD')
+              INTO(MAPACADI)
+           END-EXEC
+           .
+
+       210-ENTER.
+           IF T2CODL = 0 OR T2CODI = SPACE
+              MOVE 'POR FAVOR INFORME UM CODIGO PARA EXCLUIR'
+                                           TO T2MSGO
+              PERFORM 999-TRATA-FASE2
+           END-IF
+
+           EXEC CICS READ
+              FILE('VCADPRD')
+              RIDFLD(T2CODI)
+              INTO(WS-REG-VCADPRD)
+           END-EXEC
+
+      * MOVE DAS VARIAVEIS ESPELHO PARA AS VARIAVEIS DA TELA
+           MOVE WS-CODPROD                 TO T2CODO
+           MOVE WS-DESCPROD                TO T2DESCO
+           MOVE WS-UNIDPROD                TO T2UNIDO
+           MOVE WS-LOCALPROD               TO T2LOCALO
+           MOVE WS-QTDEST                  TO T2ESTO
+           MOVE WS-QTDMAX                  TO T2MAXO
+           MOVE WS-QTDMIN                  TO T2MINO
+           MOVE WS-PRECOCOMPRA             TO T2COMPO
+           MOVE WS-PRECOVENDA              TO T2VENDO
+           MOVE WS-PERCOMIS                TO T2COMISO
+
+           MOVE 'DIGITE S PARA SIM OU N PARA NAO'
+                                           TO T2MSGO
+           MOVE 'CONFIRMA EXCLUSAO (S/N)'  TO T2ACAOO
+           PERFORM 999-TRATA-FASE3
+           .
+
+       220-PF3.
+           MOVE '1'                        TO WS-FASE
+
+           EXEC CICS XCTL
+              PROGRAM('AZ08PGMM')
+              COMMAREA(WS-DFHCOMMAREA)
+              LENGTH(LENGTH OF WS-DFHCOMMAREA)
+           END-EXEC
+           .
+
+       230-PF5.
+           PERFORM 999-CHAMA-FASE1
+           .
+
+       240-ANYKEY.
+           MOVE 'TECLA INVALIDA - VERIFIQUE AS TECLAS VALIDAS'
+                                           TO T2MSGO
+           PERFORM 999-TRATA-FASE2
+           .
+
+       250-NOTFND.
+           MOVE T2CODI                     TO WS-CODPROD
+           MOVE LOW-VALUES                 TO MAPACADO
+
+           IF WS-FASE = '2'
+              STRING 'O PRODUTO ' WS-CODPROD
+                     ' NAO LOCALIZADO'
+              DELIMITED BY SIZE INTO T2MSGO
+           ELSE
+              STRING 'O PRODUTO ' WS-CODPROD
+                     ' FOI EXCLUIDO POR OUTRO USUARIO'
+              DELIMITED BY SIZE INTO T2MSGO
+           END-IF
+
+           MOVE 'EXCLUIR OUTRO (S/N)'      TO T2ACAOO
+           PERFORM 999-TRATA-FASE4
+           .
+
+       300-FASE3.
+           EXEC CICS HANDLE AID
+              ENTER (310-ENTER)
+              PF3   (220-PF3)
+              PF5   (230-PF5)
+              CLEAR (230-PF5)
+              ANYKEY(340-ANYKEY)
+           END-EXEC
+
+           EXEC CICS RECEIVE
+              MAP('MAPACAD')
+              MAPSET('AZ08CAD')
+              INTO(MAPACADI)
+           END-EXEC
+           .
+
+       310-ENTER.
+           IF T2CONFL     = 0      OR
+              T2CONFI     = SPACES OR
+              T2CONFI NOT = 'S'    AND
+              T2CONFI NOT = 'N'
+              MOVE 'DIGITE S=SIM OU N=NAO' TO T2MSGO
+              PERFORM 999-TRATA-FASE3
+           END-IF
+
+           IF T2CONFI = 'S'
+              EXEC CICS DELETE
+                 FILE('VCADPRD')
+                 RIDFLD(T2CODI)
+              END-EXEC
+
+              MOVE 'DIGITE S PARA SIM OU N PARA NAO'
+                                              TO T2MSGO
+              MOVE 'EXCLUIR OUTRO (S/N)'      TO T2ACAOO
+              PERFORM 999-TRATA-FASE4
+           END-IF
+
+           PERFORM 220-PF3
+           .
+
+       340-ANYKEY.
+           MOVE 'TECLA INVALIDA - VERIFIQUE AS TECLAS VALIDAS'
+                                           TO T2MSGO
+           PERFORM 999-TRATA-FASE3
+           .
+
+       400-FASE4.
+           EXEC CICS HANDLE AID
+              ENTER (410-ENTER)
+              PF3   (220-PF3)
+              PF5   (230-PF5)
+              CLEAR (230-PF5)
+              ANYKEY(440-ANYKEY)
+           END-EXEC
+
+           EXEC CICS RECEIVE
+              MAP('MAPACAD')
+              MAPSET('AZ08CAD')
+              INTO(MAPACADI)
+           END-EXEC
+           .
+
+       410-ENTER.
+           IF T2CONFL     = 0      OR
+              T2CONFI     = SPACES OR
+              T2CONFI NOT = 'S'    AND
+              T2CONFI NOT = 'N'
+              MOVE 'DIGITE S=SIM OU N=NAO' TO T2MSGO
+              PERFORM 999-TRATA-FASE4
+           END-IF
+
+           IF T2CONFI = 'S'
+              PERFORM 999-CHAMA-FASE1
+           END-IF
+
+           PERFORM 220-PF3
+           .
+
+       440-ANYKEY.
+           MOVE 'TECLA INVALIDA - VERIFIQUE AS TECLAS VALIDAS'
+                                           TO T2MSGO
+           PERFORM 999-TRATA-FASE4
+           .
+
+       999-CHAMA-FASE3.
+           MOVE '3'                        TO WS-FASE
+
+           EXEC CICS RETURN
+              TRANSID('Z08C')
+              COMMAREA(WS-DFHCOMMAREA)
+              LENGTH(LENGTH OF WS-DFHCOMMAREA)
+           END-EXEC
+           .
+
+       999-CHAMA-FASE4.
+           MOVE '4'                        TO WS-FASE
+
+           EXEC CICS RETURN
+              TRANSID('Z08C')
+              COMMAREA(WS-DFHCOMMAREA)
+              LENGTH(LENGTH OF WS-DFHCOMMAREA)
+           END-EXEC
+           .
+
+       999-TRATA-FASE3.
+           MOVE -1                         TO T2CONFL
+           PERFORM 999-PROTECAO-FASE3
+           PERFORM 999-MANDA-TELA
+           PERFORM 999-CHAMA-FASE3
+           .
+
+       999-TRATA-FASE4.
+           MOVE -1                         TO T2CONFL
+           MOVE LOW-VALUES                 TO T2CONFO
+           PERFORM 999-PROTECAO-FASE3
+           PERFORM 999-MANDA-TELA
+           PERFORM 999-CHAMA-FASE4
+           .
+
+       999-MANDA-TELA.
+           MOVE EIBTRMID                   TO T2TERMO
+           MOVE EIBTRNID                   TO T2TRANO
+           MOVE EIBTASKN                   TO T2TASKO
+           MOVE WS-FASE                    TO T2FASEO
+           MOVE 'EXCLUSAO VSAM-KSDS'       TO T2TELAO
+
+           EXEC CICS ASSIGN
+              USERID(T2USRO)
+           END-EXEC
+
+           MOVE +18                        TO WS-LENGTH
+
+           EXEC CICS LINK
+              PROGRAM('AUXCICS1')
+              COMMAREA(WS-VAR-TEMPO)
+              LENGTH(WS-LENGTH)
+           END-EXEC
+
+           MOVE WS-DATA                    TO T2DATAO
+           MOVE WS-HORARIO                 TO T2HORAO
+
+           EXEC CICS SEND
+              MAP('MAPACAD')
+              MAPSET('AZ08CAD')
+              FROM(MAPACADO)
+              ERASE FREEKB ALARM CURSOR
+           END-EXEC
+           .
+
+       999-CHAMA-FASE1.
+           MOVE '1'                        TO WS-FASE
+
+           EXEC CICS XCTL
+              PROGRAM('AZ08PGMC')
+              COMMAREA(WS-DFHCOMMAREA)
+              LENGTH(LENGTH OF WS-DFHCOMMAREA)
+           END-EXEC
+           .
+
+       999-CHAMA-FASE2.
+           MOVE '2'                        TO WS-FASE
+
+           EXEC CICS RETURN
+              TRANSID('Z08C')
+              COMMAREA(WS-DFHCOMMAREA)
+              LENGTH(LENGTH OF WS-DFHCOMMAREA)
+           END-EXEC
+           .
+
+       999-TRATA-FASE2.
+           MOVE -1                         TO T2CODL
+           PERFORM 999-PROTECAO-FASE2
+           PERFORM 999-MANDA-TELA
+           PERFORM 999-CHAMA-FASE2
+           .
+
+       999-ENCERRA-TRANSACAO.
+           MOVE +80                        TO WS-LENGTH
+
+           EXEC CICS SEND TEXT
+              FROM (WS-MSG-ERRO)
+              LENGTH(WS-LENGTH)
+              ERASE FREEKB ALARM
+           END-EXEC
+
+           EXEC CICS RETURN
+           END-EXEC
+           .
+
+       999-MAPFAIL.
+           MOVE 'ERRO NO MAPA AZ08CAD'     TO WS-MSG-ERRO
+           PERFORM 999-ENCERRA-TRANSACAO
+           .
+
+       999-ERROR.
+           MOVE 'ERRO NAO PREVISTO'        TO WS-MSG-ERRO
+           PERFORM 999-ENCERRA-TRANSACAO
+           .
+
+       999-PROTECAO-FASE2.
+      * USAR OS SEGUINTES MNEMONICOS DA DFHBMSCA:
+      *
+      * DFHBMPRF - (PROT  , ALFA, NORM, ON) - PARA PROTEGER
+      * DFHUNIMD - (UMPROT, ALFA, BRT , ON) - PARA DESPROTEGER ALFA
+      * DFHUNINT - (UMPROT, NUM , BRT , ON) - PARA DESPROTEGER NUM
+           MOVE DFHUNINT                   TO T2CODA
+           MOVE DFHBMPRF                   TO T2DESCA
+           MOVE DFHBMPRF                   TO T2UNIDA
+           MOVE DFHBMPRF                   TO T2LOCALA
+           MOVE DFHBMPRF                   TO T2ESTA
+           MOVE DFHBMPRF                   TO T2MAXA
+           MOVE DFHBMPRF                   TO T2MINA
+           MOVE DFHBMPRF                   TO T2COMPA
+           MOVE DFHBMPRF                   TO T2VENDA
+           MOVE DFHBMPRF                   TO T2COMISA
+           MOVE DFHBMPRF                   TO T2ACAOA
+           MOVE DFHBMPRF                   TO T2CONFA
+
+      * SUBLINHADO
+           MOVE DFHUNDLN                   TO T2CODH
+           MOVE DFHALL                     TO T2CONFH
+           .
+
+       999-PROTECAO-FASE3.
+      * USAR OS SEGUINTES MNEMONICOS DA DFHBMSCA:
+      *
+      * DFHBMPRF - (PROT  , ALFA, NORM, ON) - PARA PROTEGER
+      * DFHUNIMD - (UMPROT, ALFA, BRT , ON) - PARA DESPROTEGER ALFA
+      * DFHUNINT - (UMPROT, NUM , BRT , ON) - PARA DESPROTEGER NUM
+           MOVE DFHBMPRF                   TO T2CODA
+           MOVE DFHBMPRF                   TO T2DESCA
+           MOVE DFHBMPRF                   TO T2UNIDA
+           MOVE DFHBMPRF                   TO T2LOCALA
+           MOVE DFHBMPRF                   TO T2ESTA
+           MOVE DFHBMPRF                   TO T2MAXA
+           MOVE DFHBMPRF                   TO T2MINA
+           MOVE DFHBMPRF                   TO T2COMPA
+           MOVE DFHBMPRF                   TO T2VENDA
+           MOVE DFHBMPRF                   TO T2COMISA
+           MOVE DFHBMPRF                   TO T2ACAOA
+           MOVE DFHUNIMD                   TO T2CONFA
+
+      * SUBLINHADO
+           MOVE DFHALL                     TO T2CODH
+           MOVE DFHUNDLN                   TO T2CONFH
+           .
